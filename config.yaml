@@ -1,0 +1,94 @@
+# =====================================================================
+# Portfolio Engine configuration
+# Long only, equity ETF, macro constrained Sharpe maximiser
+# Edit this file to change the universe, baskets, and settings.
+# No code changes needed for config edits.
+# =====================================================================
+
+
+settings:
+  lookback_years: 5            # years of daily history for return/cov estimation
+  annualisation: 252           # trading days per year
+  num_simulations: 50000       # Monte Carlo portfolios
+  expected_returns: historical # historical | black_litterman (Phase 2; BL uses views.yaml)
+  covariance_estimator: simple # simple (shrinkage below) | ledoit_wolf (analytic intensity)
+  shrinkage: 0.10              # covariance shrinkage toward diagonal (simple estimator only)
+  max_position: 0.15           # max weight in any single ETF
+  min_position: 0.00           # long only floor
+  transaction_cost_bps: 10     # one way cost in basis points, used in backtest
+  benchmark: SPY               # market proxy for CAPM betas and backtest comparison
+  rebalance: monthly
+
+risk_free:
+  mode: live                   # live = fetch 3 month T bill (^IRX) from Yahoo, FRED fallback
+  manual_rate: 0.045           # used only if mode = manual or all live sources fail
+  cml_long_rate_ticker: ^TNX   # 10 year yield, shown alongside for context
+
+# ---------------------------------------------------------------------
+# Black Litterman (Phase 2). Active only when settings.expected_returns
+# is black_litterman. Views live in views.yaml and ship empty; with no
+# views the model uses pure market implied equilibrium returns.
+# ---------------------------------------------------------------------
+black_litterman:
+  tau: 0.05                       # uncertainty of the equilibrium prior (literature standard)
+  views_file: views.yaml          # owner's views with confidences; empty by default
+  market_weights_cache_days: 7    # reuse cached ETF AUM this many days
+
+# ---------------------------------------------------------------------
+# Robustness diagnostics: bootstrap weight stability and expected
+# return sensitivity. Adds ~15-30s to a run; disable for quick checks.
+# ---------------------------------------------------------------------
+robustness:
+  enabled: true
+  n_bootstrap: 100               # resampled re-optimisations
+  sensitivity_bump: 0.01         # +/- shift applied to each ETF's expected return
+
+# ---------------------------------------------------------------------
+# Universe: pure play equity ETFs only. ~20 instruments.
+# ---------------------------------------------------------------------
+universe:
+  VOO:  Vanguard S&P 500
+  QQQ:  Invesco Nasdaq 100
+  IWM:  iShares Russell 2000
+  VEA:  Vanguard Developed Markets ex US
+  VWO:  Vanguard Emerging Markets
+  XLK:  Technology Select Sector SPDR
+  SMH:  VanEck Semiconductor
+  XLV:  Health Care Select Sector SPDR
+  XLF:  Financial Select Sector SPDR
+  XLI:  Industrial Select Sector SPDR
+  XLE:  Energy Select Sector SPDR
+  XOP:  SPDR Oil & Gas Exploration & Production
+  XLU:  Utilities Select Sector SPDR
+  NLR:  VanEck Uranium & Nuclear Energy
+  URA:  Global X Uranium
+  GRID: First Trust Clean Edge Smart Grid
+  PAVE: Global X US Infrastructure Development
+  ICLN: iShares Global Clean Energy
+
+# ---------------------------------------------------------------------
+# Macro theme baskets. Each basket = named group of tickers with a
+# min and max total portfolio weight. The optimiser maximises Sharpe
+# while respecting every basket range. These are YOUR views.
+# ---------------------------------------------------------------------
+baskets:
+  ai_energy_demand:
+    thesis: AI driven electricity demand growth favours nuclear, uranium, utilities and grid build out
+    tickers: [NLR, URA, XLU, GRID]
+    min: 0.10
+    max: 0.25
+  ai_compute:
+    thesis: Semiconductor and large cap tech exposure to the AI capex cycle
+    tickers: [SMH, XLK, QQQ]
+    min: 0.05
+    max: 0.25
+  energy_infrastructure:
+    thesis: Traditional energy and US infrastructure spend as a real economy tilt
+    tickers: [XLE, XOP, PAVE]
+    min: 0.00
+    max: 0.15
+  core_market:
+    thesis: Diversified beta anchor across US, developed and emerging markets
+    tickers: [VOO, IWM, VEA, VWO, XLV, XLF, XLI, ICLN]
+    min: 0.30
+    max: 0.70

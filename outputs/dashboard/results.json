@@ -1,0 +1,209 @@
+{
+  "generated": "2026-06-11T13:42:11",
+  "data_note": "Yahoo Finance adjusted closes, 2021-05-13 to 2026-06-10",
+  "benchmark": "SPY",
+  "estimation": {
+    "expected_returns": "historical",
+    "covariance_estimator": "simple",
+    "lw_intensity": null,
+    "bl_available": true,
+    "bl_n_views": 0,
+    "bl_delta": 3.683378818362699,
+    "bl_tau": 0.05,
+    "bl_weights_source": "ETF AUM (Yahoo totalAssets, cap weight proxy)"
+  },
+  "risk_free": {
+    "rate": 0.03629999876022339,
+    "source": "Yahoo Finance ^IRX (13 week T bill)",
+    "ten_year": 0.04532000064849853
+  },
+  "universe": {
+    "VOO": "Vanguard S&P 500",
+    "QQQ": "Invesco Nasdaq 100",
+    "IWM": "iShares Russell 2000",
+    "VEA": "Vanguard Developed Markets ex US",
+    "VWO": "Vanguard Emerging Markets",
+    "XLK": "Technology Select Sector SPDR",
+    "SMH": "VanEck Semiconductor",
+    "XLV": "Health Care Select Sector SPDR",
+    "XLF": "Financial Select Sector SPDR",
+    "XLI": "Industrial Select Sector SPDR",
+    "XLE": "Energy Select Sector SPDR",
+    "XOP": "SPDR Oil & Gas Exploration & Production",
+    "XLU": "Utilities Select Sector SPDR",
+    "NLR": "VanEck Uranium & Nuclear Energy",
+    "URA": "Global X Uranium",
+    "GRID": "First Trust Clean Edge Smart Grid",
+    "PAVE": "Global X US Infrastructure Development",
+    "ICLN": "iShares Global Clean Energy"
+  },
+  "metrics": {
+    "exp_return": 0.20018066906974175,
+    "volatility": 0.16810281932344387,
+    "sharpe": 0.9748835324064271,
+    "sortino": 0.9270566593685522,
+    "beta": 0.9596217863074359,
+    "max_drawdown": -0.20151306843124883,
+    "var_95": 0.01700427515478078,
+    "cvar_95": 0.02510393420950305,
+    "mc_best_sharpe": 0.8828606707194834,
+    "mc_n_feasible": 9119
+  },
+  "weights": {
+    "VOO": 0.15,
+    "XLK": 0.1,
+    "SMH": 0.15,
+    "XLV": 0.07545,
+    "XLI": 0.12455,
+    "XLE": 0.15,
+    "XLU": 0.126061,
+    "NLR": 0.123939
+  },
+  "min_vol_point": {
+    "ret": 0.11776174736556513,
+    "vol": 0.13061545434363156
+  },
+  "baskets": [
+    {
+      "name": "ai_energy_demand",
+      "min": 0.1,
+      "max": 0.25,
+      "allocation": 0.25,
+      "tickers": [
+        "XLU",
+        "NLR",
+        "URA",
+        "GRID"
+      ]
+    },
+    {
+      "name": "ai_compute",
+      "min": 0.05,
+      "max": 0.25,
+      "allocation": 0.25,
+      "tickers": [
+        "QQQ",
+        "XLK",
+        "SMH"
+      ]
+    },
+    {
+      "name": "energy_infrastructure",
+      "min": 0.0,
+      "max": 0.15,
+      "allocation": 0.15,
+      "tickers": [
+        "XLE",
+        "XOP",
+        "PAVE"
+      ]
+    },
+    {
+      "name": "core_market",
+      "min": 0.3,
+      "max": 0.7,
+      "allocation": 0.35,
+      "tickers": [
+        "VOO",
+        "IWM",
+        "VEA",
+        "VWO",
+        "XLV",
+        "XLF",
+        "XLI",
+        "ICLN"
+      ]
+    }
+  ],
+  "limit_checks": [
+    {
+      "check": "Single ETF max 15%",
+      "value": "15.0% (VOO)",
+      "pass": true
+    },
+    {
+      "check": "Basket 'ai_energy_demand' in [10%, 25%]",
+      "value": "25.0%",
+      "pass": true
+    },
+    {
+      "check": "Basket 'ai_compute' in [5%, 25%]",
+      "value": "25.0%",
+      "pass": true
+    },
+    {
+      "check": "Basket 'energy_infrastructure' in [0%, 15%]",
+      "value": "15.0%",
+      "pass": true
+    },
+    {
+      "check": "Basket 'core_market' in [30%, 70%]",
+      "value": "35.0%",
+      "pass": true
+    },
+    {
+      "check": "Fully invested, long only",
+      "value": "sum 1.0000, min 0.0000",
+      "pass": true
+    }
+  ],
+  "stress": [
+    {
+      "scenario": "Correction (market -10%)",
+      "market_shock": -0.1,
+      "est_portfolio_impact": -0.09596217863074359
+    },
+    {
+      "scenario": "Bear market (market -20%)",
+      "market_shock": -0.2,
+      "est_portfolio_impact": -0.19192435726148718
+    },
+    {
+      "scenario": "COVID style crash (market -34%)",
+      "market_shock": -0.34,
+      "est_portfolio_impact": -0.32627140734452825
+    },
+    {
+      "scenario": "GFC style collapse (market -50%)",
+      "market_shock": -0.5,
+      "est_portfolio_impact": -0.47981089315371794
+    }
+  ],
+  "worst": {
+    "worst_day": -0.06762172783531853,
+    "worst_day_date": "2025-04-04",
+    "worst_month": -0.0997041163479846,
+    "worst_month_date": "2022-09-30"
+  },
+  "correlation_monitor": {
+    "avg_corr_full": 0.5626739279166013,
+    "avg_corr_recent": 0.407462252683775,
+    "window_days": 60,
+    "warning": false
+  },
+  "capm_attrs": {
+    "market_return": 0.14297380891759717,
+    "rf": 0.03629999876022339
+  },
+  "backtest_summary": {
+    "start": "2022-06-01",
+    "end": "2026-06-10",
+    "portfolio": {
+      "cagr": 0.1704146540996645,
+      "vol": 0.18632376148797156,
+      "cum_return": 0.8788901160125555,
+      "sharpe": 0.7197936230377097,
+      "sortino": 0.7372953758738681,
+      "max_drawdown": -0.20752845186911617
+    },
+    "benchmark": {
+      "cagr": 0.16692396566643097,
+      "vol": 0.16794625695024343,
+      "cum_return": 0.8565314932725703,
+      "sharpe": 0.7777724212389376,
+      "max_drawdown": -0.18755233666641324
+    },
+    "n_rebalances": 49,
+    "avg_turnover_cost_bps": 10
+  }
+}

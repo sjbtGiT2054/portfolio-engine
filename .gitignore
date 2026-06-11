@@ -1,0 +1,22 @@
+# Environments and caches
+.venv/
+__pycache__/
+*.pyc
+
+# Local tool configuration and owner specific context
+.claude/
+CLAUDE.local.md
+
+# Local data caches (rebuilt on any engine run; never commit)
+data/
+
+# The owner's personal holdings stay local, never in the public repo
+current_holdings.csv
+
+# Written tear sheets contain BUY/SELL trade tables; keep them local.
+# outputs/dashboard/ and outputs/charts/ ARE committed: they are the
+# public app's data source.
+outputs/reports/
+
+# Streamlit secrets must never be committed
+.streamlit/secrets.toml

@@ -1,0 +1,11 @@
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+matplotlib>=3.7
+yfinance>=0.2.40
+PyYAML>=6.0
+requests>=2.31
+# Dashboard (also required at the root so Streamlit Community Cloud,
+# which installs from this file, can run dashboard/app.py)
+streamlit>=1.35
+ruamel.yaml>=0.18
