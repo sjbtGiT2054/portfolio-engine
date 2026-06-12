@@ -43,6 +43,7 @@ A long only, equity ETF, macro constrained portfolio management adviser built by
 - Phase 4 (DONE): local Streamlit dashboard in `dashboard/` reading `outputs/dashboard/` and `current_holdings.csv` — interactive frontier, basket sliders that rewrite config.yaml, tear sheet viewer. Never let dashboard work break the engine.
 - Phase 5 (DONE): Portfolio Analyzer — arbitrary holdings vs engine optimal, frontier gap, blend diagnostics, dashboard tab.
 - Phase 6 (DONE): user universe optimiser inside the Analyzer tab — four alternative weightings, own frontier with MC cloud, weight deltas (increase/decrease wording, never BUY/SELL in public), correlation heatmap, sensitivity flags, gated walk forward backtest. Fully session only in public mode.
+- Phase 7 (DONE): public mode is portfolio first — landing tab "Your Portfolio" (Yahoo symbol search via `analyzer.search_symbols`, weight % or amount input via `analyzer.holdings_from_input`, metric cards with plain English help tooltips, optimise results behind expanders), engine views nested under one "Engine Showcase" tab. Local mode tabs unchanged.
 - Later: market neutral long short toggle.
 
 ## Local context

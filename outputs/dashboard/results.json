@@ -1,6 +1,6 @@
 {
-  "generated": "2026-06-12T19:34:47",
-  "data_note": "Yahoo Finance adjusted closes, 2021-05-14 to 2026-06-12",
+  "generated": "2026-06-12T20:23:41",
+  "data_note": "synthetic demo data",
   "benchmark": "SPY",
   "estimation": {
     "expected_returns": "historical",
@@ -8,14 +8,14 @@
     "lw_intensity": null,
     "bl_available": true,
     "bl_n_views": 0,
-    "bl_delta": 3.7520620811137113,
+    "bl_delta": 1.0,
     "bl_tau": 0.05,
-    "bl_weights_source": "ETF AUM (Yahoo totalAssets, cap weight proxy)"
+    "bl_weights_source": "inverse volatility (fallback proxy)"
   },
   "risk_free": {
-    "rate": 0.036180000305175784,
-    "source": "Yahoo Finance ^IRX (13 week T bill)",
-    "ten_year": 0.044790000915527345
+    "rate": 0.045,
+    "source": "manual (config)",
+    "ten_year": null
   },
   "universe": {
     "VOO": "Vanguard S&P 500",
@@ -38,37 +38,37 @@
     "ICLN": "iShares Global Clean Energy"
   },
   "metrics": {
-    "exp_return": 0.2075124270988133,
-    "volatility": 0.17104444539829783,
-    "sharpe": 1.00168366411823,
-    "sortino": 0.9557010938183356,
-    "beta": 0.9727283632035341,
-    "max_drawdown": -0.20640883712147162,
-    "var_95": 0.017275701839005304,
-    "cvar_95": 0.02549297976208937,
-    "mc_best_sharpe": 0.9132352574141974,
+    "exp_return": 0.22335415155726687,
+    "volatility": 0.1780528204510021,
+    "sharpe": 1.0016923691829285,
+    "sortino": 0.9846583495947112,
+    "beta": 0.4073656197890264,
+    "max_drawdown": -0.16940019399043682,
+    "var_95": 0.018309874612629645,
+    "cvar_95": 0.022581352280536707,
+    "mc_best_sharpe": 0.7917121887860197,
     "mc_n_feasible": 9119
   },
   "weights": {
-    "VOO": 0.15,
-    "XLK": 0.1,
-    "SMH": 0.15,
-    "XLV": 0.060412,
-    "XLI": 0.139588,
-    "XLE": 0.15,
-    "XLU": 0.111329,
-    "NLR": 0.138671
+    "VOO": 0.139026,
+    "IWM": 0.15,
+    "XLK": 0.15,
+    "XLV": 0.15,
+    "XLU": 0.144621,
+    "URA": 0.019063,
+    "PAVE": 0.15,
+    "ICLN": 0.097291
   },
   "min_vol_point": {
-    "ret": 0.12028887554930219,
-    "vol": 0.13069808455949525
+    "ret": 0.1591537792962341,
+    "vol": 0.15604568155974127
   },
   "baskets": [
     {
       "name": "ai_energy_demand",
       "min": 0.1,
       "max": 0.25,
-      "allocation": 0.25,
+      "allocation": 0.163684,
       "tickers": [
         "XLU",
         "NLR",
@@ -80,7 +80,7 @@
       "name": "ai_compute",
       "min": 0.05,
       "max": 0.25,
-      "allocation": 0.25,
+      "allocation": 0.15,
       "tickers": [
         "QQQ",
         "XLK",
@@ -102,7 +102,7 @@
       "name": "core_market",
       "min": 0.3,
       "max": 0.7,
-      "allocation": 0.35,
+      "allocation": 0.536317,
       "tickers": [
         "VOO",
         "IWM",
@@ -118,17 +118,17 @@
   "limit_checks": [
     {
       "check": "Single ETF max 15%",
-      "value": "15.0% (VOO)",
+      "value": "15.0% (IWM)",
       "pass": true
     },
     {
       "check": "Basket 'ai_energy_demand' in [10%, 25%]",
-      "value": "25.0%",
+      "value": "16.4%",
       "pass": true
     },
     {
       "check": "Basket 'ai_compute' in [5%, 25%]",
-      "value": "25.0%",
+      "value": "15.0%",
       "pass": true
     },
     {
@@ -138,7 +138,7 @@
     },
     {
       "check": "Basket 'core_market' in [30%, 70%]",
-      "value": "35.0%",
+      "value": "53.6%",
       "pass": true
     },
     {
@@ -151,59 +151,59 @@
     {
       "scenario": "Correction (market -10%)",
       "market_shock": -0.1,
-      "est_portfolio_impact": -0.09727283632035341
+      "est_portfolio_impact": -0.040736561978902644
     },
     {
       "scenario": "Bear market (market -20%)",
       "market_shock": -0.2,
-      "est_portfolio_impact": -0.19454567264070682
+      "est_portfolio_impact": -0.08147312395780529
     },
     {
       "scenario": "COVID style crash (market -34%)",
       "market_shock": -0.34,
-      "est_portfolio_impact": -0.3307276434892016
+      "est_portfolio_impact": -0.138504310728269
     },
     {
       "scenario": "GFC style collapse (market -50%)",
       "market_shock": -0.5,
-      "est_portfolio_impact": -0.48636418160176703
+      "est_portfolio_impact": -0.2036828098945132
     }
   ],
   "worst": {
-    "worst_day": -0.06790136706045075,
-    "worst_day_date": "2025-04-04",
-    "worst_month": -0.10044137032256406,
-    "worst_month_date": "2022-09-30"
+    "worst_day": -0.03758863849979979,
+    "worst_day_date": "2023-06-26",
+    "worst_month": -0.09056750399708857,
+    "worst_month_date": "2024-03-31"
   },
   "correlation_monitor": {
-    "avg_corr_full": 0.562956156315239,
-    "avg_corr_recent": 0.40927288744787416,
+    "avg_corr_full": 0.34135671728834716,
+    "avg_corr_recent": 0.29295472248170235,
     "window_days": 60,
     "warning": false
   },
   "capm_attrs": {
-    "market_return": 0.1448767677430745,
-    "rf": 0.036180000305175784
+    "market_return": 0.06953636586177572,
+    "rf": 0.045
   },
   "backtest_summary": {
-    "start": "2022-06-01",
+    "start": "2022-09-01",
     "end": "2026-06-12",
     "portfolio": {
-      "cagr": 0.18272443958983176,
-      "vol": 0.18845033560562,
-      "cum_return": 0.9619645969569866,
-      "sharpe": 0.7776289642239602,
-      "sortino": 0.7858763137236122,
-      "max_drawdown": -0.20752116195923265
+      "cagr": 0.1376957371590759,
+      "vol": 0.1863113177700672,
+      "cum_return": 0.6574318457221604,
+      "sharpe": 0.49753143431401575,
+      "sortino": 0.5435730896504704,
+      "max_drawdown": -0.25409438142582996
     },
     "benchmark": {
-      "cagr": 0.17299349717535106,
-      "vol": 0.16799294654387922,
-      "cum_return": 0.8979394288907967,
-      "sharpe": 0.8144002452772029,
-      "max_drawdown": -0.18755233666641324
+      "cagr": -0.011041660772605932,
+      "vol": 0.27109641970343157,
+      "cum_return": -0.0425550312861509,
+      "sharpe": -0.2067222460330285,
+      "max_drawdown": -0.5422687452898642
     },
-    "n_rebalances": 49,
+    "n_rebalances": 46,
     "avg_turnover_cost_bps": 10
   }
 }

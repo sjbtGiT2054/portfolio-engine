@@ -135,6 +135,75 @@ def fetch_prices_usd(tickers: list[str], lookback_years: int = 5,
 
 
 # ----------------------------------------------------------------------
+# Symbol search and holdings input (Phase 7)
+# ----------------------------------------------------------------------
+
+def search_symbols(query: str, limit: int = 8) -> list[dict]:
+    """Free Yahoo Finance symbol search (no API key). Returns publicly
+    traded matches as {symbol, name, exchange, type}. The caller should
+    cache per session; this hits the network every call."""
+    import requests
+    r = requests.get("https://query1.finance.yahoo.com/v1/finance/search",
+                     params={"q": query, "quotesCount": limit, "newsCount": 0},
+                     headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+    r.raise_for_status()
+    out = []
+    for q in r.json().get("quotes", []):
+        sym = q.get("symbol")
+        name = q.get("shortname") or q.get("longname")
+        if sym and name and q.get("quoteType") in ("EQUITY", "ETF", "MUTUALFUND"):
+            out.append({"symbol": sym, "name": name,
+                        "exchange": q.get("exchDisp", ""),
+                        "type": q.get("quoteType", "")})
+    return out
+
+
+def holdings_from_input(df: pd.DataFrame) -> tuple[pd.Series, list[str]]:
+    """Turn the input table (columns: ticker, weight_pct, amount) into
+    normalised weights. Rules, in plain terms:
+    - amounts are currency agnostic numbers; if every row has one, weights
+      come from the amounts (and any weights are ignored, with a note)
+    - if no amounts are given, the weight column is used and normalised to
+      100% (with a note when it didn't sum)
+    - a true mix (amounts on some rows only) is ambiguous and rejected
+    Returns (weights summing to one, notes for the user).
+    """
+    notes: list[str] = []
+    d = df.copy()
+    d["ticker"] = d["ticker"].fillna("").astype(str).str.strip().str.upper()
+    d = d[d["ticker"] != ""]
+    if d.empty:
+        raise ValueError("Add at least one holding.")
+    if d["ticker"].duplicated().any():
+        dupes = sorted(d["ticker"][d["ticker"].duplicated()].unique())
+        raise ValueError(f"Duplicate ticker(s): {', '.join(dupes)}. Combine "
+                         "them into one row.")
+
+    amt = pd.to_numeric(d.get("amount"), errors="coerce")
+    wt = pd.to_numeric(d.get("weight_pct"), errors="coerce")
+    has_amt = amt.notna() & (amt > 0)
+    has_wt = wt.notna() & (wt > 0)
+
+    if has_amt.any():
+        if not has_amt.all():
+            raise ValueError("Mixed input: give every holding an amount, or "
+                             "clear the amounts and use weights only.")
+        if has_wt.any():
+            notes.append("Both amounts and weights were given; amounts win, "
+                         "weights were ignored.")
+        w = pd.Series(amt.values, index=d["ticker"].values, dtype=float)
+    else:
+        if not has_wt.all():
+            raise ValueError("Each holding needs a weight % or an amount.")
+        w = pd.Series(wt.values, index=d["ticker"].values, dtype=float)
+        total = float(w.sum())
+        if abs(total - 100.0) > 0.5:
+            notes.append(f"Weights summed to {total:.1f}%; they were "
+                         "normalised to 100%.")
+    return w / w.sum(), notes
+
+
+# ----------------------------------------------------------------------
 # Statistics (pure, unit testable)
 # ----------------------------------------------------------------------
 
