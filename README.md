@@ -63,6 +63,7 @@ Everything lives in `config.yaml`: universe, baskets and ranges, lookback, simul
 - Phase 3: individual equities alongside ETFs, with tighter robustness controls
 - Phase 4 (DONE): local Streamlit dashboard in `dashboard/` (interactive frontier, basket sliders, holdings editor, tear sheet viewer)
 - Phase 5 (DONE): Portfolio Analyzer dashboard tab — paste any portfolio (any Yahoo tickers, any currency, converted to USD with every conversion documented), compare it with the engine optimal and the frontier, quantify the gap and the historical effect of partial reallocation. Analytics only, no advice
+- Phase 6 (DONE): Portfolio Optimiser inside the Analyzer tab — max Sharpe, min volatility, max diversification and equal weight solved over exactly your tickers (long only, fully invested, adjustable position cap), with the universe's own Monte Carlo cloud and frontier, weight change tables, correlation heatmap, sensitivity fragility flags, and a gated walk forward backtest of current weights vs the re-optimised strategy vs SPY. In sample optima are labelled as illustrations; the out of sample backtest is the honest measure
 - Later: market neutral long short toggle
 
 ## Limitations register

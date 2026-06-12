@@ -31,6 +31,7 @@ HOLDINGS_PATH = os.path.join(PROJECT_DIR, "current_holdings.csv")
 
 sys.path.insert(0, PROJECT_DIR)
 from engine import analyzer  # noqa: E402  (read only calculations, permitted by CLAUDE.md)
+from engine import user_optimiser  # noqa: E402  (Phase 6, read only calculations)
 from engine.report import rebalance_recommendation  # noqa: E402  (read only helper)
 
 st.set_page_config(page_title="Portfolio Engine", page_icon="📈", layout="wide")
@@ -694,7 +695,9 @@ def tab_analyzer(results: dict | None, public: bool = False) -> None:
             st.success("Holdings validated and saved to current_holdings.csv.")
         with st.spinner("Fetching prices, converting to USD, computing..."):
             try:
-                st.session_state["analysis"] = analyzer.analyze(holdings, PROJECT_DIR)
+                st.session_state["analysis"] = analyzer.analyze(
+                    holdings, PROJECT_DIR, use_cache=not public)
+                st.session_state.pop("user_opt", None)  # stale for new holdings
             except Exception as exc:
                 st.error(f"Analysis failed: {exc}")
                 return
@@ -767,7 +770,211 @@ def tab_analyzer(results: dict | None, public: bool = False) -> None:
     st.caption("Each row re-runs history with that fraction moved from the user "
                "portfolio to the engine optimal. Backward looking arithmetic, "
                "not a forecast and not a recommendation.")
+
+    _user_opt_section(res, public)
     st.caption(res["disclaimer"])
+
+
+# ----------------------------------------------------------------------
+# Phase 6: optimise the user's own universe (inside the Analyzer tab)
+# ----------------------------------------------------------------------
+
+ILLUSTRATION_CAPTION = (
+    "Optimised weights are the historical in sample solution under the stated "
+    "assumptions. Estimation error means these are illustrations, not "
+    "forecasts: small changes in the inputs move the weights, which is exactly "
+    "what the sensitivity table below and the Robustness & BL tab demonstrate.")
+
+
+def _user_opt_section(res: dict, public: bool) -> None:
+    st.divider()
+    st.subheader("Optimise this universe")
+    if res.get("prices_usd") is None:
+        st.info("Re-run the analysis above to enable optimisation.")
+        return
+    holdings = res["holdings"]
+    tickers = list(holdings.index)
+    n = len(tickers)
+    st.caption("Four alternative weightings over exactly the tickers analysed "
+               "above, long only and fully invested, solved with the same SLSQP "
+               "machinery as the engine. " + ILLUSTRATION_CAPTION)
+    if n < 2:
+        st.info("Optimisation needs at least 2 valid tickers; add holdings "
+                "above and re-run the analysis.")
+        return
+
+    min_cap = int(np.ceil(100.0 / n))
+    cap = st.slider("Max single position", min_cap, 100, max(25, min_cap),
+                    step=1, format="%d%%",
+                    help="Long only and fully invested are always enforced") / 100
+    if st.button("Run optimisation", type="primary", key="run_user_opt"):
+        prices = res["prices_usd"][tickers]
+        try:
+            with st.spinner("Optimising and simulating 10,000 portfolios..."):
+                opt = user_optimiser.optimise(prices, res["rf"], max_pos=cap)
+                sens = user_optimiser.sensitivity(opt)
+            with st.spinner("Walk forward backtest, roughly 30 to 60 seconds..."):
+                bt = user_optimiser.backtest_user(opt, holdings, res["bench_daily"])
+            st.session_state["user_opt"] = {"opt": opt, "sens": sens, "bt": bt}
+        except ValueError as exc:
+            st.error(str(exc))
+            return
+
+    uo_state = st.session_state.get("user_opt")
+    if not uo_state:
+        return
+    opt, sens, bt = uo_state["opt"], uo_state["sens"], uo_state["bt"]
+    if opt["cap_note"]:
+        st.warning(opt["cap_note"])
+
+    labels = {"max_sharpe": "Max Sharpe", "min_vol": "Min volatility",
+              "max_div": "Max diversification", "equal_weight": "Equal weight"}
+    prices = res["prices_usd"][tickers]
+    rets = opt["rets"]
+
+    # ----- side by side stats -------------------------------------------
+    def stats_col(w: pd.Series) -> dict:
+        s = analyzer.portfolio_stats(prices, w, res["bench_daily"], res["rf"])
+        wn = (w / w.sum()).reindex(rets.columns).fillna(0.0).values
+        s["avg_pairwise_corr"] = user_optimiser.weighted_avg_correlation(wn, opt["corr"])
+        return {k: s[k] for k in ("ann_return", "volatility", "sharpe", "sortino",
+                                  "max_drawdown", "beta", "avg_pairwise_corr", "hhi")}
+
+    cols = {"Current": stats_col(holdings)}
+    for key, lab in labels.items():
+        cols[lab] = stats_col(opt["weights"][key])
+    comp = pd.DataFrame(cols)
+    disp = comp.copy()
+    for c in disp.columns:
+        disp[c] = [_fmt_stat(k, v) for k, v in comp[c].items()]
+    st.markdown("**Current weights vs optimised alternatives** (USD, historical)")
+    st.dataframe(disp, width="stretch")
+    st.caption("Average pairwise correlation here is weight weighted, so it "
+               "differs per portfolio over the same tickers. HHI 1.00 = single "
+               "holding; 1/n = equal weight.")
+
+    # ----- frontier with cloud and the five portfolios --------------------
+    st.markdown("**This universe's own efficient frontier**")
+    mc = opt["mc"]
+    rng = np.random.default_rng(3)
+    keep = rng.choice(len(mc["returns"]), size=min(4000, len(mc["returns"])),
+                      replace=False)
+    cloud = pd.DataFrame({"vol": mc["vols"][keep], "ret": mc["returns"][keep],
+                          "sharpe": mc["sharpes"][keep]})
+    mu, cov = opt["exp_ret"].values, opt["cov"].values
+
+    def point(w: pd.Series, label: str) -> dict:
+        wn = (w / w.sum()).reindex(rets.columns).fillna(0.0).values
+        return {"vol": float(np.sqrt(wn @ cov @ wn)), "ret": float(wn @ mu),
+                "label": label}
+
+    pts = pd.DataFrame([point(holdings, "Current")] +
+                       [point(opt["weights"][k], lab) for k, lab in labels.items()])
+    layers = [
+        alt.Chart(cloud).mark_circle(size=8, opacity=0.45).encode(
+            x=alt.X("vol:Q", axis=alt.Axis(format=".0%"), title="Annualised volatility"),
+            y=alt.Y("ret:Q", axis=alt.Axis(format=".0%"), title="Annualised return"),
+            color=alt.Color("sharpe:Q", scale=alt.Scale(scheme="viridis"), title="Sharpe"),
+            tooltip=[alt.Tooltip("ret", format=".1%"), alt.Tooltip("vol", format=".1%"),
+                     alt.Tooltip("sharpe", format=".2f")]),
+    ]
+    if not opt["frontier"].empty:
+        layers.append(alt.Chart(opt["frontier"]).mark_line(color="red", strokeWidth=2)
+                      .encode(x="vol:Q", y="ret:Q"))
+    layers.append(alt.Chart(pts).mark_point(size=300, filled=True, stroke="black",
+                                            strokeWidth=1).encode(
+        x="vol:Q", y="ret:Q", shape=alt.Shape("label:N", title=None),
+        color=alt.value("red"),
+        tooltip=["label", alt.Tooltip("ret", format=".1%"),
+                 alt.Tooltip("vol", format=".1%")]))
+    st.altair_chart(alt.layer(*layers).resolve_scale(shape="independent")
+                    .properties(height=440).interactive(), width="stretch")
+    st.caption("The SLSQP portfolios are the exact constrained solutions; the "
+               "10,000 simulation cloud is an illustration of the same "
+               "opportunity set, identical in spirit to the engine's own "
+               "frontier chart.")
+
+    # ----- weight changes --------------------------------------------------
+    st.markdown("**Weight changes vs current**")
+    pick = st.selectbox("Alternative", list(labels.values()), key="uo_alt")
+    key = [k for k, v in labels.items() if v == pick][0]
+    cur = (holdings / holdings.sum()).reindex(rets.columns).fillna(0.0)
+    prop = opt["weights"][key]
+    delta = prop - cur
+    wc = pd.DataFrame({
+        "current": cur, "proposed": prop, "change": delta,
+        "direction": np.where(delta > 0.005, "increase",
+                              np.where(delta < -0.005, "decrease", "unchanged")),
+    }).sort_values("change", ascending=False)
+    st.dataframe(wc.style.format({"current": "{:.1%}", "proposed": "{:.1%}",
+                                  "change": "{:+.1%}"}),
+                 width="stretch")
+    st.caption("Weight deltas are descriptive analytics of the historical "
+               "solution, not trade instructions.")
+
+    # ----- correlation heatmap --------------------------------------------
+    if n > 1:
+        st.markdown("**Correlation between your holdings**")
+        t1, t2, cmax = user_optimiser.highest_corr_pair(opt["corr"])
+        cdf = opt["corr"].stack().reset_index()
+        cdf.columns = ["a", "b", "corr"]
+        heat = alt.Chart(cdf).mark_rect().encode(
+            x=alt.X("a:N", title=None, sort=tickers),
+            y=alt.Y("b:N", title=None, sort=tickers),
+            color=alt.Color("corr:Q", scale=alt.Scale(scheme="redyellowgreen",
+                                                      reverse=True, domain=[-1, 1])),
+            tooltip=["a", "b", alt.Tooltip("corr", format=".2f")])
+        outline = alt.Chart(cdf[((cdf["a"] == t1) & (cdf["b"] == t2)) |
+                                ((cdf["a"] == t2) & (cdf["b"] == t1))]).mark_rect(
+            fillOpacity=0, stroke="black", strokeWidth=3).encode(
+            x=alt.X("a:N", sort=tickers), y=alt.Y("b:N", sort=tickers))
+        st.altair_chart((heat + outline).properties(height=max(240, 36 * n)),
+                        width="stretch")
+        st.caption(f"Highest correlated pair (outlined): {t1} and {t2} at "
+                   f"{cmax:.2f}. Highly correlated holdings add little "
+                   "diversification to each other.")
+
+    # ----- sensitivity carried over -----------------------------------------
+    st.markdown("**Stability of the max Sharpe solution**")
+    n_frag = int(sens["fragile"].sum())
+    if n_frag:
+        st.warning(f"{n_frag} position(s) are fragile: shifting one ticker's "
+                   "expected return by 1% moves over 10% of the portfolio. "
+                   "The shiny optimum is less solid than it looks.")
+    else:
+        st.success("The max Sharpe weights survive a 1% shift in any single "
+                   "return estimate without moving more than 10% of the book.")
+    sshow = sens.reset_index()[["ticker", "weight", "turnover_up",
+                                "turnover_down", "fragile"]]
+    st.dataframe(sshow.style.format({"weight": "{:.1%}", "turnover_up": "{:.1%}",
+                                     "turnover_down": "{:.1%}"}).map(
+        lambda v: "color: red; font-weight: bold" if v is True else "",
+        subset=["fragile"]), hide_index=True, width="stretch")
+
+    # ----- walk forward backtest ---------------------------------------------
+    st.markdown("**Walk forward backtest of this universe**")
+    if "skipped" in bt:
+        st.info(bt["skipped"])
+    else:
+        st.caption(f"{bt['start']} to {bt['end']}, {bt['n_rebalances']} monthly "
+                   "re-optimisations on trailing data only, 10 bps costs on "
+                   "turnover. Out of sample results are the honest measure, and "
+                   "they are usually worse than the in sample optimum above. "
+                   "That gap is the point of showing them.")
+        growth = (1 + bt["daily"].fillna(0)).cumprod().reset_index()
+        growth.columns = ["date"] + list(bt["daily"].columns)
+        gm = growth.melt(id_vars="date", var_name="series", value_name="growth")
+        line = alt.Chart(gm).mark_line().encode(
+            x=alt.X("date:T", title=None),
+            y=alt.Y("growth:Q", title="Growth of 1", scale=alt.Scale(zero=False)),
+            color=alt.Color("series:N", title=None),
+            tooltip=[alt.Tooltip("date:T"), "series",
+                     alt.Tooltip("growth", format=".3f")],
+        ).properties(height=360).interactive()
+        st.altair_chart(line, width="stretch")
+        st.dataframe(bt["summary"].style.format({
+            "cagr": "{:.2%}", "vol": "{:.2%}", "sharpe": "{:.2f}",
+            "max_drawdown": "{:.1%}"}), width="stretch")
 
 
 # ----------------------------------------------------------------------

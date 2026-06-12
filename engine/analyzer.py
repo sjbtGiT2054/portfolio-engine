@@ -305,7 +305,7 @@ def concentration_flags(weights: pd.Series, stats_d: dict) -> list[str]:
 
 def analyze(holdings: pd.Series, project_dir: str,
             lookback_years: int = 5, rf: float | None = None,
-            periods: int = 252) -> dict:
+            periods: int = 252, use_cache: bool = True) -> dict:
     """Run the full analysis of a user portfolio against the engine's
     latest outputs. Reads (never writes): outputs/dashboard/results.json,
     outputs/dashboard/frontier.csv, data/prices.csv, optimal weights.
@@ -321,7 +321,8 @@ def analyze(holdings: pd.Series, project_dir: str,
     # user portfolio, SPY and the engine universe, all in USD
     tickers = list(holdings.index)
     bench_ticker = results.get("benchmark", "SPY")
-    prices_user, notes = fetch_prices_usd(tickers + [bench_ticker], lookback_years)
+    prices_user, notes = fetch_prices_usd(tickers + [bench_ticker], lookback_years,
+                                          use_cache=use_cache)
     bench_daily = prices_user[bench_ticker].pct_change().dropna()
     user_prices = prices_user[tickers]
 
@@ -345,6 +346,9 @@ def analyze(holdings: pd.Series, project_dir: str,
         "rf": rf, "benchmark": bench_ticker,
         "beta_method": ("weekly returns (cross listed funds close before the US "
                         "benchmark; daily betas are biased toward zero)"),
+        "holdings": holdings,
+        "prices_usd": prices_user,   # user tickers + benchmark, for Phase 6
+        "bench_daily": bench_daily,
         "conversion_notes": notes,
         "user": user, "optimal": opt_stats, "spy": spy,
         "frontier_gap": gap, "blends": blends,
