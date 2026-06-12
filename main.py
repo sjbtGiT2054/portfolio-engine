@@ -152,7 +152,7 @@ def main() -> None:
         "data_note": ("synthetic demo data" if args.offline else
                       f"Yahoo Finance adjusted closes, {rets.index[0].date()} to {rets.index[-1].date()}"),
         "rebalance": report.rebalance_recommendation(weights, PROJECT_DIR),
-        "backtest": None,
+        "backtest": None, "daily": daily,
         "ret_mode": ret_mode, "cov_estimator": cov_estimator,
         "lw_intensity": lw_intensity,
         "exp_ret_hist": exp_ret_hist, "bl": bl,

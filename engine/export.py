@@ -58,6 +58,13 @@ def write_dashboard_data(ctx: dict, cfg: dict, frontier: pd.DataFrame,
         }).round(6).to_csv(os.path.join(dash_dir, "backtest_daily.csv"),
                            index_label="date")
 
+    # Engine optimal daily returns: the analyzer compares user portfolios
+    # against this series, and on a deployed app (no data/ cache) it is the
+    # only source for it
+    if ctx.get("daily") is not None:
+        ctx["daily"].round(8).rename("return").to_csv(
+            os.path.join(dash_dir, "optimal_daily.csv"), index_label="date")
+
     # ----- Phase 2: BL comparison and robustness tables -------------------
     if ctx.get("bl"):
         bl = ctx["bl"]

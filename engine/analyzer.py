@@ -145,14 +145,10 @@ def hhi(weights: pd.Series) -> float:
     return float((w ** 2).sum())
 
 
-def portfolio_stats(prices_usd: pd.DataFrame, weights: pd.Series,
-                    bench_daily: pd.Series, rf: float,
-                    periods: int = 252) -> dict:
-    """Full stat set for a static weight portfolio, USD terms throughout."""
-    rets = prices_usd.pct_change().dropna()
-    w = (weights / weights.sum()).reindex(rets.columns).fillna(0.0)
-    daily = pd.Series(rets.values @ w.values, index=rets.index)
-
+def series_stats(daily: pd.Series, bench_daily: pd.Series, rf: float,
+                 periods: int = 252) -> dict:
+    """Stat set computable from a daily return series alone (everything
+    except the weight dependent concentration and correlation figures)."""
     bench = bench_daily.reindex(daily.index).dropna()
     daily_b = daily.reindex(bench.index)
 
@@ -171,13 +167,6 @@ def portfolio_stats(prices_usd: pd.DataFrame, weights: pd.Series,
     vol = float(daily.std() * np.sqrt(periods))
     mdd, _ = stats.max_drawdown(daily)
     var = stats.value_at_risk(daily)
-    n = len(weights)
-    if n > 1:
-        corr = rets.corr().values
-        avg_corr = float(np.nanmean(corr[np.triu_indices(len(corr), k=1)]))
-    else:
-        avg_corr = None  # a single holding has no pairs
-
     return {
         "ann_return": ann_ret, "volatility": vol,
         "sharpe": (ann_ret - rf) / vol if vol > 0 else 0.0,
@@ -185,12 +174,30 @@ def portfolio_stats(prices_usd: pd.DataFrame, weights: pd.Series,
         "max_drawdown": mdd,
         "var_95": var["var_hist"], "cvar_95": var["cvar"],
         "beta": beta, "alpha": alpha,
-        "avg_pairwise_corr": avg_corr,
-        "hhi": hhi(weights),
-        "n_holdings": int((weights > 0).sum()),
         "daily": daily,
         "start": str(daily.index[0].date()), "end": str(daily.index[-1].date()),
     }
+
+
+def portfolio_stats(prices_usd: pd.DataFrame, weights: pd.Series,
+                    bench_daily: pd.Series, rf: float,
+                    periods: int = 252) -> dict:
+    """Full stat set for a static weight portfolio, USD terms throughout."""
+    rets = prices_usd.pct_change().dropna()
+    w = (weights / weights.sum()).reindex(rets.columns).fillna(0.0)
+    daily = pd.Series(rets.values @ w.values, index=rets.index)
+
+    out = series_stats(daily, bench_daily, rf, periods)
+    n = len(weights)
+    if n > 1:
+        corr = rets.corr().values
+        avg_corr = float(np.nanmean(corr[np.triu_indices(len(corr), k=1)]))
+    else:
+        avg_corr = None  # a single holding has no pairs
+    out["avg_pairwise_corr"] = avg_corr
+    out["hhi"] = hhi(weights)
+    out["n_holdings"] = int((weights > 0).sum())
+    return out
 
 
 def frontier_gap(user_ret: float, user_vol: float,
@@ -330,12 +337,31 @@ def analyze(holdings: pd.Series, project_dir: str,
     spy = portfolio_stats(prices_user[[bench_ticker]],
                           pd.Series({bench_ticker: 1.0}), bench_daily, rf, periods)
 
-    # engine optimal daily series from the engine's own cached prices
-    uni_prices = pd.read_csv(os.path.join(project_dir, "data", "prices.csv"),
-                             index_col=0, parse_dates=True)
+    # Engine optimal daily series, preferring the committed export so a
+    # deployed app (which has no data/ cache) works; the local price cache
+    # is only a fallback for outputs generated before that artifact existed
     w_opt = pd.Series(results["weights"])
-    cols = [t for t in w_opt.index if t in uni_prices.columns]
-    opt_stats = portfolio_stats(uni_prices[cols], w_opt[cols], bench_daily, rf, periods)
+    opt_path = os.path.join(out_dir, "optimal_daily.csv")
+    if os.path.exists(opt_path):
+        opt_daily = pd.read_csv(opt_path, index_col=0, parse_dates=True)["return"]
+        opt_stats = series_stats(opt_daily, bench_daily, rf, periods)
+        corr_path = os.path.join(out_dir, "correlation.csv")
+        avg_corr = None
+        if os.path.exists(corr_path):
+            corr = pd.read_csv(corr_path, index_col=0)
+            held = [t for t in w_opt.index if t in corr.index]
+            if len(held) > 1:
+                sub = corr.loc[held, held].values
+                avg_corr = float(np.nanmean(sub[np.triu_indices(len(held), k=1)]))
+        opt_stats["avg_pairwise_corr"] = avg_corr
+        opt_stats["hhi"] = hhi(w_opt)
+        opt_stats["n_holdings"] = int((w_opt > 0).sum())
+    else:
+        uni_prices = pd.read_csv(os.path.join(project_dir, "data", "prices.csv"),
+                                 index_col=0, parse_dates=True)
+        cols = [t for t in w_opt.index if t in uni_prices.columns]
+        opt_stats = portfolio_stats(uni_prices[cols], w_opt[cols], bench_daily,
+                                    rf, periods)
 
     gap = frontier_gap(user["ann_return"], user["volatility"], frontier)
     blends = blend_diagnostics(user["daily"], opt_stats["daily"], rf, periods)
