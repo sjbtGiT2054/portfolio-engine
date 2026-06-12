@@ -1,3 +1,14 @@
-# Dashboard only dependencies, installed on top of the engine's requirements.txt
+# Complete dependency list for the dashboard INCLUDING the engine modules
+# it imports (analyzer, user_optimiser -> optimiser/backtest -> scipy).
+# Streamlit Community Cloud installs the requirements file nearest the
+# entrypoint (this one), so it must be self contained, not an add on to
+# the root requirements.txt.
+numpy>=1.24
+pandas>=2.0
+scipy>=1.10
+matplotlib>=3.7
+yfinance>=0.2.40
+PyYAML>=6.0
+requests>=2.31
 streamlit>=1.35
 ruamel.yaml>=0.18

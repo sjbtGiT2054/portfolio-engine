@@ -71,8 +71,10 @@ changes.
 
 - Python version: Streamlit Cloud defaults to a recent 3.x; the code
   targets 3.12. You can pin it in the app's Advanced settings.
-- Dependencies install from the root `requirements.txt`, which includes
-  streamlit and ruamel.yaml for this reason.
+- Dependencies: Streamlit Cloud installs the requirements file nearest
+  the entrypoint, i.e. `dashboard/requirements.txt`, so that file is the
+  complete self contained list (engine deps included). The root
+  `requirements.txt` remains the engine's own list for local installs.
 - The Portfolio Analyzer fetches Yahoo prices at request time on the
   public app; heavy traffic could hit Yahoo rate limits. It is a demo,
   not a service.
