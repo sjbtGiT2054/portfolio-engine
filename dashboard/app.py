@@ -783,9 +783,10 @@ def tab_reports() -> None:
                     "The chart gallery below shows the latest engine run.")
         else:
             st.info("No tear sheets yet. Run the engine from the sidebar.")
-    pick = st.selectbox("Tear sheet", reports)
-    with open(os.path.join(REPORTS_DIR, pick), encoding="utf-8") as f:
-        st.markdown(f.read())
+    else:
+        pick = st.selectbox("Tear sheet", reports)
+        with open(os.path.join(REPORTS_DIR, pick), encoding="utf-8") as f:
+            st.markdown(f.read())
     with st.expander("Static chart gallery (PNGs from the last run)"):
         pngs = sorted(f for f in os.listdir(CHARTS_DIR) if f.endswith(".png")) \
             if os.path.isdir(CHARTS_DIR) else []
