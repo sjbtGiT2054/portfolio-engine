@@ -33,6 +33,9 @@ HOLDINGS_PATH = os.path.join(PROJECT_DIR, "current_holdings.csv")
 sys.path.insert(0, PROJECT_DIR)
 from engine import analyzer  # noqa: E402  (read only calculations, permitted by CLAUDE.md)
 from engine import user_optimiser  # noqa: E402  (Phase 6, read only calculations)
+from engine import black_litterman as bl  # noqa: E402  (Phase 8 macro views)
+from engine import macro  # noqa: E402  (Phase 8 macro data layer)
+from engine import macro_sensitivity as ms  # noqa: E402  (Phase 8 sensitivities)
 from engine.report import rebalance_recommendation  # noqa: E402  (read only helper)
 
 st.set_page_config(page_title="Portfolio Engine", page_icon="📈", layout="wide")
@@ -1371,6 +1374,306 @@ def tab_showcase(results: dict | None) -> None:
 
 
 # ----------------------------------------------------------------------
+# Phase 8: Macro Views tab (front end for the Black Litterman machinery)
+# ----------------------------------------------------------------------
+
+MACRO_CAPTION = (
+    "This turns a macro scenario into your portfolio's implied response. Each "
+    "variable has a naive baseline path; you bend it; the gap times each "
+    "holding's estimated historical sensitivity becomes a return view, fed "
+    "through Black Litterman, and the portfolio is re-optimised. Sensitivities "
+    "are noisy estimates of past relationships, not causal constants, so this "
+    "shows how the portfolio would tilt IF those relationships held. It is not "
+    "a forecast or advice.")
+
+
+def _slider_step(lo: float, hi: float) -> float:
+    rng = hi - lo
+    if rng <= 15:
+        return 0.1
+    if rng <= 80:
+        return 1.0
+    if rng <= 1000:
+        return 5.0
+    return 50.0
+
+
+@st.cache_data(show_spinner=False)
+def _macro_series_cached(key: str, day: str):
+    """Fetch one macro series, memoised per key per day (the day token in
+    the cache key forces at most daily refresh inside a session)."""
+    return macro.get_series(macro.VARS_BY_KEY[key])
+
+
+def _get_active_series() -> dict:
+    from datetime import date
+    day = date.today().isoformat()
+    return {k: _macro_series_cached(k, day) for k in macro.ACTIVE_KEYS}
+
+
+def _macro_var_block(var: dict, series, horizon: int) -> tuple[float, str]:
+    """Render one active variable: current value, history + baseline + user
+    path chart, terminal slider and confidence. Returns (deviation, conf)."""
+    key = var["key"]
+    st.markdown(f"**{var['label']}**", help=var["tooltip"])
+    if series is None or len(series) == 0:
+        st.caption("Data source unavailable right now; this variable is "
+                   "inactive. The rest of the tab still works.")
+        st.slider(var["label"], float(var["bounds"][0]), float(var["bounds"][1]),
+                  float(var["bounds"][0]), disabled=True, key=f"macro_{key}_off",
+                  label_visibility="collapsed")
+        return 0.0, "medium"
+
+    lo, hi = float(var["bounds"][0]), float(var["bounds"][1])
+    cur = macro.current_value(series)
+    base = macro.baseline_path(series, horizon)
+    base_terminal = float(np.clip(base["value"].iloc[-1], lo, hi))
+    step = _slider_step(lo, hi)
+
+    left, right = st.columns([2, 3])
+    with left:
+        st.metric(f"Current ({var['unit']})" if var["unit"] else "Current",
+                  f"{cur:.2f}")
+        terminal = st.slider(
+            f"Where it ends in {horizon}y", lo, hi,
+            float(np.clip(round(base_terminal / step) * step, lo, hi)),
+            step=step, key=f"macro_{key}_term",
+            help="Drag above or below the naive baseline to express your view")
+        conf = st.radio("Confidence", ["low", "medium", "high"], index=1,
+                        horizontal=True, key=f"macro_{key}_conf")
+    with right:
+        hist = series.resample("ME").last().tail(36).reset_index()
+        hist.columns = ["date", "value"]
+        last_date = hist["date"].iloc[-1]
+        user = pd.DataFrame({"date": [last_date, base["date"].iloc[-1]],
+                             "value": [cur, terminal]})
+        ch_hist = alt.Chart(hist).mark_line(color="#555").encode(
+            x=alt.X("date:T", title=None), y=alt.Y("value:Q", title=var["unit"]))
+        ch_base = alt.Chart(base).mark_line(color="gray", strokeDash=[5, 4]).encode(
+            x="date:T", y="value:Q")
+        ch_user = alt.Chart(user).mark_line(color="red", strokeWidth=2.5).encode(
+            x="date:T", y="value:Q")
+        st.altair_chart((ch_hist + ch_base + ch_user).properties(height=170),
+                        width="stretch")
+        st.caption("Solid grey: history. Dashed: naive baseline (not a "
+                   "forecast). Red: your path.")
+    return float(terminal - base_terminal), conf
+
+
+def tab_macro_views(public: bool) -> None:
+    st.caption(MACRO_CAPTION)
+    res = st.session_state.get("analysis")
+    if not res:
+        st.info("Analyse a portfolio first (in the 'Your Portfolio' tab on the "
+                "public app, or 'Portfolio Analyzer' locally). The macro views "
+                "need holdings to attach to.")
+        return
+    holdings = res["holdings"]
+    tickers = list(holdings.index)
+    if len(tickers) < 2:
+        st.info("Macro re-optimisation needs at least 2 holdings; add another "
+                "and re-analyse.")
+        return
+
+    horizon = st.select_slider("Scenario horizon (years)", [1, 2, 3, 4, 5],
+                               value=3, key="macro_horizon",
+                               help="Applies to every variable's path below")
+    series = _get_active_series()
+    deviations, var_conf = {}, {}
+    for key in macro.ACTIVE_KEYS:
+        var = macro.VARS_BY_KEY[key]
+        with st.container(border=True):
+            dev, conf = _macro_var_block(var, series.get(key), horizon)
+        deviations[key] = dev
+        var_conf[key] = conf
+
+    with st.expander("More indicators (display only, no sliders yet)"):
+        from datetime import date
+        day = date.today().isoformat()
+        for var in macro.MACRO_VARS:
+            if var["active"]:
+                continue
+            s = _macro_series_cached(var["key"], day)
+            c1, c2 = st.columns([2, 3])
+            c1.markdown(f"**{var['label']}**", help=var["tooltip"])
+            if s is None or len(s) == 0:
+                c1.caption("Unavailable")
+                continue
+            c1.metric("Current", f"{macro.current_value(s):.2f}")
+            h = s.resample("ME").last().tail(36).reset_index()
+            h.columns = ["date", "value"]
+            c2.altair_chart(alt.Chart(h).mark_line().encode(
+                x=alt.X("date:T", title=None), y=alt.Y("value:Q", title=None)
+            ).properties(height=120), width="stretch")
+
+    n = len(tickers)
+    min_cap = int(np.ceil(100.0 / n))
+    cap = st.slider("Max single position for the re-optimised portfolio",
+                    min_cap, 100, max(25, min_cap), step=1, format="%d%%",
+                    key="macro_cap") / 100
+
+    if st.button("Apply macro views", type="primary", key="macro_apply"):
+        moved = {k: v for k, v in deviations.items() if abs(v) > 1e-9}
+        if not moved:
+            st.warning("Every variable is still on its baseline. Bend at least "
+                       "one path to express a view.")
+        else:
+            try:
+                prices = res["prices_usd"][tickers]
+                with st.spinner("Estimating sensitivities and applying views..."):
+                    sens_key = tuple(tickers)
+                    cache = st.session_state.get("macro_sens_cache", {})
+                    if cache.get("key") != sens_key:
+                        cache = {"key": sens_key,
+                                 "sens": ms.estimate_sensitivities(prices, series)}
+                        st.session_state["macro_sens_cache"] = cache
+                    sens = cache["sens"]
+                    opt_hist = user_optimiser.optimise(prices, res["rf"],
+                                                       max_pos=cap)
+                    delta = bl.implied_risk_aversion(res["bench_daily"], res["rf"])
+                    w_cur = (holdings / holdings.sum()).reindex(
+                        opt_hist["cov"].index).fillna(0.0)
+                    pi = bl.equilibrium_returns(opt_hist["cov"], w_cur, delta)
+                    tilts, confs = ms.build_view_tilts(sens, deviations, horizon,
+                                                       var_conf, tickers)
+                    views = ms.build_bl_views(pi, tilts, confs)
+                    post = bl.posterior_returns(pi, opt_hist["cov"], views,
+                                                tau=0.05) + res["rf"]
+                    opt_after = user_optimiser.optimise(prices, res["rf"],
+                                                        max_pos=cap, exp_ret=post)
+                st.session_state["macro_result"] = {
+                    "opt_after": opt_after, "post": post, "pi": pi + res["rf"],
+                    "tilts": tilts, "sens": sens, "deviations": deviations,
+                    "var_conf": var_conf, "moved": list(moved),
+                    "n_views": len(views), "delta": delta, "cap": cap}
+            except ValueError as exc:
+                st.error(str(exc))
+
+    if st.session_state.get("macro_result"):
+        _macro_results(res)
+
+
+def _macro_results(res: dict) -> None:
+    mr = st.session_state["macro_result"]
+    opt_after = mr["opt_after"]
+    holdings = res["holdings"]
+    tickers = list(holdings.index)
+    prices = res["prices_usd"][tickers]
+    w_after = opt_after["weights"]["max_sharpe"]
+    rets_cols = opt_after["rets"].columns
+
+    st.divider()
+    st.subheader("Your portfolio's implied response")
+    moved_labels = ", ".join(macro.VARS_BY_KEY[k]["label"] for k in mr["moved"])
+    st.caption(f"Views applied from: {moved_labels}. {mr['n_views']} holding "
+               f"level view(s), implied risk aversion {mr['delta']:.1f}, "
+               "Black Litterman tau 0.05.")
+
+    # before vs after stats, computed on historical data (the honest measure)
+    cur_stats = analyzer.portfolio_stats(prices, holdings, res["bench_daily"],
+                                         res["rf"])
+    aft_stats = analyzer.portfolio_stats(prices, w_after, res["bench_daily"],
+                                         res["rf"])
+    comp = pd.DataFrame({
+        "Current portfolio": {k: cur_stats[k] for k in
+                              ("ann_return", "volatility", "sharpe", "sortino",
+                               "max_drawdown", "beta")},
+        "Macro tilted optimum": {k: aft_stats[k] for k in
+                                 ("ann_return", "volatility", "sharpe", "sortino",
+                                  "max_drawdown", "beta")},
+    })
+    disp = comp.copy()
+    for c in disp.columns:
+        disp[c] = [_fmt_stat(k, v) for k, v in comp[c].items()]
+    st.markdown("**Before vs after** (historical realised stats of each "
+                "weighting)")
+    st.dataframe(disp, width="stretch")
+    st.caption("Risk and return here are historical realised figures for each "
+               "set of weights, so they are comparable. The tilt itself is "
+               "driven by the macro view's implied returns, not by history.")
+
+    # the dot moving on the frontier (under the macro view's expected returns)
+    mu = mr["post"].reindex(rets_cols).values
+    cov = opt_after["cov"].values
+
+    def point(w: pd.Series, label: str) -> dict:
+        wn = (w / w.sum()).reindex(rets_cols).fillna(0.0).values
+        return {"vol": float(np.sqrt(wn @ cov @ wn)), "ret": float(wn @ mu),
+                "label": label}
+
+    mc = opt_after["mc"]
+    rng = np.random.default_rng(3)
+    keep = rng.choice(len(mc["returns"]), size=min(3500, len(mc["returns"])),
+                      replace=False)
+    cloud = pd.DataFrame({"vol": mc["vols"][keep], "ret": mc["returns"][keep],
+                          "sharpe": mc["sharpes"][keep]})
+    pts = pd.DataFrame([point(holdings, "Current portfolio"),
+                        point(w_after, "Macro tilted optimum")])
+    layers = [alt.Chart(cloud).mark_circle(size=8, opacity=0.35).encode(
+        x=alt.X("vol:Q", axis=alt.Axis(format=".0%"),
+                title="Volatility (historical)"),
+        y=alt.Y("ret:Q", axis=alt.Axis(format=".0%"),
+                title="Expected return under your macro view"),
+        color=alt.Color("sharpe:Q", scale=alt.Scale(scheme="viridis"),
+                        title="Sharpe"),
+        tooltip=[alt.Tooltip("ret", format=".1%"), alt.Tooltip("vol", format=".1%")])]
+    if not opt_after["frontier"].empty:
+        layers.append(alt.Chart(opt_after["frontier"]).mark_line(
+            color="red", strokeWidth=2).encode(x="vol:Q", y="ret:Q"))
+    layers.append(alt.Chart(pts).mark_point(size=320, filled=True, stroke="black",
+                                            strokeWidth=1).encode(
+        x="vol:Q", y="ret:Q", shape=alt.Shape("label:N", title=None),
+        color=alt.value("red"),
+        tooltip=["label", alt.Tooltip("ret", format=".1%"),
+                 alt.Tooltip("vol", format=".1%")]))
+    st.altair_chart(alt.layer(*layers).resolve_scale(shape="independent")
+                    .properties(height=420).interactive(), width="stretch")
+    st.caption("The vertical axis is expected return UNDER your macro view, so "
+               "the optimum moves toward the holdings your view favours. The "
+               "horizontal axis stays historical volatility.")
+
+    # holding tilts and weight changes
+    cur_w = (holdings / holdings.sum()).reindex(rets_cols).fillna(0.0)
+    wc = pd.DataFrame({
+        "current": cur_w, "macro tilted": w_after.reindex(rets_cols),
+        "change": w_after.reindex(rets_cols) - cur_w,
+        "view return tilt": pd.Series(mr["tilts"]).reindex(rets_cols),
+    })
+    wc["direction"] = np.where(wc["change"] > 0.005, "increase",
+                               np.where(wc["change"] < -0.005, "decrease",
+                                        "unchanged"))
+    wc = wc.sort_values("change", ascending=False)
+    st.markdown("**Weight changes and the return view behind each**")
+    st.dataframe(wc.style.format({"current": "{:.1%}", "macro tilted": "{:.1%}",
+                                  "change": "{:+.1%}", "view return tilt": "{:+.2%}"}),
+                 width="stretch")
+    st.caption("The view return tilt is the annualised return view the macro "
+               "scenario implies for each holding, before Black Litterman "
+               "blends it with the equilibrium prior. Increase and decrease are "
+               "weight deltas, not instructions.")
+
+    with st.expander("Estimated sensitivities behind these views"):
+        st.caption("Each cell is a holding's estimated response to a one unit "
+                   "monthly change in the variable, from up to 10 years of "
+                   "monthly data. Low confidence means the relationship is not "
+                   "statistically distinguishable from zero (noise).")
+        rows = []
+        for key in mr["moved"]:
+            for t in tickers:
+                cell = mr["sens"].get(key, {}).get(t)
+                if cell:
+                    rows.append({"variable": macro.VARS_BY_KEY[key]["label"],
+                                 "holding": t, "coef": cell["coef"],
+                                 "t stat": cell["tstat"],
+                                 "confidence": "low" if cell["low_confidence"]
+                                 else "ok"})
+        if rows:
+            sdf = pd.DataFrame(rows)
+            st.dataframe(sdf.style.format({"coef": "{:.4f}", "t stat": "{:.2f}"}),
+                         hide_index=True, width="stretch")
+
+
+# ----------------------------------------------------------------------
 
 def main() -> None:
     public = is_public()
@@ -1390,6 +1693,7 @@ def main() -> None:
         # Phase 7: portfolio first landing; the engine sits behind one tab
         sections = [
             ("Your Portfolio", lambda: tab_your_portfolio(results)),
+            ("Macro Views", lambda: tab_macro_views(public)),
             ("Engine Showcase", lambda: tab_showcase(results)),
         ]
     else:
@@ -1406,6 +1710,7 @@ def main() -> None:
             ]
         sections.append(("Portfolio Analyzer",
                          lambda: tab_analyzer(results, public)))
+        sections.append(("Macro Views", lambda: tab_macro_views(public)))
         sections.append(("Basket editor", lambda: tab_baskets(results)))
         sections.append(("Holdings & rebalance", tab_holdings))
         sections.append(("Tear sheets", tab_reports))

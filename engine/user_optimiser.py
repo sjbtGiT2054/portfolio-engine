@@ -58,11 +58,15 @@ def weighted_avg_correlation(w: np.ndarray, corr: pd.DataFrame) -> float:
 
 def optimise(prices_usd: pd.DataFrame, rf: float, max_pos: float = DEFAULT_MAX_POS,
              periods: int = 252, shrinkage: float = 0.10,
-             n_sims: int = MC_SIMS) -> dict:
+             n_sims: int = MC_SIMS, exp_ret: pd.Series | None = None) -> dict:
     """Solve the four portfolios plus the Monte Carlo cloud and the
     universe's own efficient frontier. Returns weights as Series indexed
     by ticker. If the cap is infeasible for n tickers (max_pos < 1/n) it
-    is raised to 1/n and noted."""
+    is raised to 1/n and noted.
+
+    exp_ret optionally overrides the historical mean expected returns,
+    so the Macro Views tab can re-optimise on Black Litterman posterior
+    returns. The covariance and correlation are always historical."""
     rets = prices_usd.pct_change().dropna()
     validate_universe(rets)
     n = rets.shape[1]
@@ -74,7 +78,10 @@ def optimise(prices_usd: pd.DataFrame, rf: float, max_pos: float = DEFAULT_MAX_P
                 "only feasible portfolio at exactly that cap).")
         max_pos = 1.0 / n
 
-    exp_ret = stats.expected_returns(rets, periods)
+    if exp_ret is None:
+        exp_ret = stats.expected_returns(rets, periods)
+    else:
+        exp_ret = exp_ret.reindex(rets.columns)  # align to the price panel
     cov = stats.covariance_matrix(rets, periods, shrinkage)
     corr = rets.corr()
 
