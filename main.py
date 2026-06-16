@@ -47,7 +47,7 @@ def main() -> None:
     tickers = list(cfg["universe"].keys())
     benchmark_ticker = s["benchmark"]
 
-    print(f"Universe: {len(tickers)} ETFs | lookback {s['lookback_years']}y | "
+    print(f"Universe: {len(tickers)} names | lookback {s['lookback_years']}y | "
           f"{s['num_simulations']:,} simulations | mode: {'OFFLINE DEMO' if args.offline else 'live data'}")
 
     # ----- Data ---------------------------------------------------------
@@ -59,6 +59,16 @@ def main() -> None:
     bench = rets_all[benchmark_ticker] if benchmark_ticker in rets_all.columns else rets.mean(axis=1)
     print(f"Data: {len(rets)} trading days, {rets.index[0].date()} to {rets.index[-1].date()}, "
           f"{len(universe)} usable tickers")
+    dropped = [t for t in tickers if t not in universe]
+    if dropped:
+        print(f"  Dropped (no/thin history or FX unavailable): {', '.join(dropped)}")
+    if not args.offline and data.LAST_CONVERSION_NOTES:
+        converted = {t: n for t, n in data.LAST_CONVERSION_NOTES.items()
+                     if t in universe and "no conversion" not in n}
+        if converted:
+            print("  Currency conversions to USD:")
+            for t, n in converted.items():
+                print(f"    {t}: {n}")
 
     rf = get_risk_free_rate(cfg, offline=args.offline)
     print(f"Risk free rate: {rf['rate']:.2%} ({rf['source']})")

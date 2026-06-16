@@ -303,7 +303,7 @@ def tab_capm(results: dict) -> None:
                "(positive alpha from OLS on daily returns); points below underperformed. "
                "Alpha here is historical, not a forecast.")
 
-    st.subheader("Per ETF CAPM table")
+    st.subheader("Per name CAPM table")
     show = df[["ticker", "name", "beta", "capm_expected", "realised", "alpha"]].copy()
     st.dataframe(show.style.format({"beta": "{:.2f}", "capm_expected": "{:.1%}",
                                     "realised": "{:.1%}", "alpha": "{:+.1%}"}),
@@ -518,7 +518,7 @@ def tab_baskets(results: dict | None) -> None:
     with open(CONFIG_PATH, encoding="utf-8") as f:
         doc = yaml_rt.load(f)
 
-    st.caption("Adjust the macro basket ranges and the single ETF cap, then save. "
+    st.caption("Adjust the basket ranges and the single name cap, then save. "
                "config.yaml is rewritten in place with comments preserved; the engine "
                "stays untouched. Re-run the optimisation afterwards to see the effect. "
                "These ranges are your active views, the Markowitz machinery only "
@@ -527,7 +527,7 @@ def tab_baskets(results: dict | None) -> None:
     alloc_now = ({b["name"]: b["allocation"] for b in results["baskets"]}
                  if results else {})
 
-    max_pos = st.slider("Single ETF cap (max_position)", 5, 50,
+    max_pos = st.slider("Single name cap (max_position)", 5, 50,
                         int(round(doc["settings"]["max_position"] * 100)),
                         step=1, format="%d%%") / 100
 
@@ -563,11 +563,52 @@ def tab_baskets(results: dict | None) -> None:
     for p in problems:
         st.error(p)
 
+    # Target weights: the owner's intended per name allocation. The optimiser
+    # ignores these (it enforces only the bands and the cap above); they are
+    # documentation and the default current weights for the analyzer.
+    new_targets = None
+    if "target_weights" in doc:
+        st.markdown("---")
+        st.markdown("**Target weights** — your intended allocation per name")
+        st.caption("Documentation only; the optimiser enforces the basket bands and "
+                   "the single name cap, not these. Edit a weight and save to record "
+                   "your intended allocation.")
+        ticker_basket = {t: name for name, b in doc["baskets"].items()
+                         for t in b["tickers"]}
+        tw_df = pd.DataFrame(
+            [{"ticker": str(t), "basket": ticker_basket.get(str(t), ""),
+              "target": round(float(w), 4)}
+             for t, w in doc["target_weights"].items()])
+        edited_tw = st.data_editor(
+            tw_df, hide_index=True, width="stretch", key="target_weights_editor",
+            column_config={
+                "ticker": st.column_config.TextColumn("ticker", disabled=True),
+                "basket": st.column_config.TextColumn("basket", disabled=True),
+                "target": st.column_config.NumberColumn(
+                    "target", min_value=0.0, max_value=1.0, step=0.005,
+                    format="%.3f"),
+            })
+        new_targets = {row["ticker"]: (0.0 if pd.isna(row["target"])
+                                        else float(row["target"]))
+                       for _, row in edited_tw.iterrows()}
+        tw_sum = sum(new_targets.values())
+        st.caption(f"Target weights sum to {pct(tw_sum)}." +
+                   ("" if abs(tw_sum - 1) < 0.005 else
+                    " That is away from 100%; a fully invested portfolio should sum to 100%."))
+        over_cap = [t for t, w in new_targets.items() if w > max_pos + 1e-9]
+        if over_cap:
+            st.caption(f"Above the {pct(max_pos)} single name cap: {', '.join(over_cap)}. "
+                       "The optimiser would trim these even though the target records them.")
+
     if st.button("Save to config.yaml", type="primary", disabled=bool(problems)):
         doc["settings"]["max_position"] = round(max_pos, 4)
         for name, (lo, hi) in new_ranges.items():
             doc["baskets"][name]["min"] = round(lo, 4)
             doc["baskets"][name]["max"] = round(hi, 4)
+        if new_targets is not None:
+            for t, w in new_targets.items():
+                if t in doc["target_weights"]:
+                    doc["target_weights"][t] = round(w, 4)
         with open(CONFIG_PATH, "w", encoding="utf-8") as f:
             yaml_rt.dump(doc, f)
         st.success("config.yaml updated. Re-run the engine (sidebar) to re-optimise "
@@ -1349,9 +1390,9 @@ def _pf_optimise_results(res: dict) -> None:
 
 
 def tab_showcase(results: dict | None) -> None:
-    st.caption("The author's own engine: an 18 ETF universe optimised monthly "
-               "under macro basket constraints. These views are refreshed from "
-               "the repository's committed outputs.")
+    st.caption("The author's own engine: a 28 name individual equity universe "
+               "optimised monthly under basket constraints. These views are "
+               "refreshed from the repository's committed outputs.")
     if results is None:
         st.warning("No engine output committed yet.")
         return

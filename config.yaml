@@ -1,6 +1,6 @@
 # =====================================================================
 # Portfolio Engine configuration
-# Long only, equity ETF, macro constrained Sharpe maximiser
+# Long only, individual equity, basket constrained Sharpe maximiser
 # Edit this file to change the universe, baskets, and settings.
 # No code changes needed for config edits.
 # =====================================================================
@@ -13,7 +13,7 @@ settings:
   expected_returns: historical # historical | black_litterman (Phase 2; BL uses views.yaml)
   covariance_estimator: simple # simple (shrinkage below) | ledoit_wolf (analytic intensity)
   shrinkage: 0.10              # covariance shrinkage toward diagonal (simple estimator only)
-  max_position: 0.15           # max weight in any single ETF
+  max_position: 0.07           # max weight in any single name
   min_position: 0.00           # long only floor
   transaction_cost_bps: 10     # one way cost in basis points, used in backtest
   benchmark: SPY               # market proxy for CAPM betas and backtest comparison
@@ -27,12 +27,14 @@ risk_free:
 # ---------------------------------------------------------------------
 # Black Litterman (Phase 2). Active only when settings.expected_returns
 # is black_litterman. Views live in views.yaml and ship empty; with no
-# views the model uses pure market implied equilibrium returns.
+# views the model uses pure market implied equilibrium returns. For a
+# single name universe the AUM proxy is unavailable, so the prior falls
+# back to inverse volatility weights (labelled in the run output).
 # ---------------------------------------------------------------------
 black_litterman:
   tau: 0.05                       # uncertainty of the equilibrium prior (literature standard)
   views_file: views.yaml          # owner's views with confidences; empty by default
-  market_weights_cache_days: 7    # reuse cached ETF AUM this many days
+  market_weights_cache_days: 7    # reuse cached market weight proxy this many days
 
 # ---------------------------------------------------------------------
 # Robustness diagnostics: bootstrap weight stability and expected
@@ -41,54 +43,105 @@ black_litterman:
 robustness:
   enabled: true
   n_bootstrap: 100               # resampled re-optimisations
-  sensitivity_bump: 0.01         # +/- shift applied to each ETF's expected return
+  sensitivity_bump: 0.01         # +/- shift applied to each name's expected return
 
 # ---------------------------------------------------------------------
-# Universe: pure play equity ETFs only. ~20 instruments.
+# Universe: 28 individual equities. Yahoo symbols. US listed ADRs are
+# used where available (TM, SONY, MUFG, TSM, HDB, BHP) and local lines
+# where not ('8058.T', D05.SI, '1299.HK', CSL.AX, CBA.AX, '0700.HK').
+# Non USD lines are converted to USD by the engine data layer using the
+# analyzer currency logic, and every conversion is reported on each run.
 # ---------------------------------------------------------------------
 universe:
-  VOO:  Vanguard S&P 500
-  QQQ:  Invesco Nasdaq 100
-  IWM:  iShares Russell 2000
-  VEA:  Vanguard Developed Markets ex US
-  VWO:  Vanguard Emerging Markets
-  XLK:  Technology Select Sector SPDR
-  SMH:  VanEck Semiconductor
-  XLV:  Health Care Select Sector SPDR
-  XLF:  Financial Select Sector SPDR
-  XLI:  Industrial Select Sector SPDR
-  XLE:  Energy Select Sector SPDR
-  XOP:  SPDR Oil & Gas Exploration & Production
-  XLU:  Utilities Select Sector SPDR
-  NLR:  VanEck Uranium & Nuclear Energy
-  URA:  Global X Uranium
-  GRID: First Trust Clean Edge Smart Grid
-  PAVE: Global X US Infrastructure Development
-  ICLN: iShares Global Clean Energy
+  # US core
+  LLY:    Eli Lilly
+  JNJ:    Johnson & Johnson
+  PG:     Procter & Gamble
+  KO:     Coca-Cola
+  JPM:    JPMorgan Chase
+  BRK-B:  Berkshire Hathaway
+  WMT:    Walmart
+  NEE:    NextEra Energy
+  UNP:    Union Pacific
+  MSFT:   Microsoft
+  V:      Visa
+  # APAC core
+  TM:      Toyota Motor (ADR)
+  SONY:    Sony Group (ADR)
+  MUFG:    Mitsubishi UFJ Financial (ADR)
+  '8058.T': Mitsubishi Corp (Tokyo)
+  TSM:     Taiwan Semiconductor (ADR)
+  D05.SI:  DBS Group (Singapore)
+  '1299.HK': AIA Group (Hong Kong)
+  HDB:     HDFC Bank (ADR)
+  CSL.AX:  CSL Limited (Australia)
+  CBA.AX:  Commonwealth Bank (Australia)
+  '0700.HK': Tencent Holdings (Hong Kong)
+  # Commodities (producer equities only, no oil or gas)
+  NEM:    Newmont (gold)
+  AEM:    Agnico Eagle Mines (gold)
+  BHP:    BHP Group (ADR, diversified mining)
+  FCX:    Freeport-McMoRan (copper)
+  NTR:    Nutrien (agriculture, fertiliser)
+  CCJ:    Cameco (uranium)
 
 # ---------------------------------------------------------------------
-# Macro theme baskets. Each basket = named group of tickers with a
-# min and max total portfolio weight. The optimiser maximises Sharpe
-# while respecting every basket range. These are YOUR views.
+# Baskets. Each basket = named group of tickers with a min and max total
+# portfolio weight. The optimiser maximises Sharpe while respecting every
+# basket range and the single name cap. These are YOUR allocation views.
 # ---------------------------------------------------------------------
 baskets:
-  ai_energy_demand:
-    thesis: AI driven electricity demand growth favours nuclear, uranium, utilities and grid build out
-    tickers: [NLR, URA, XLU, GRID]
-    min: 0.10
+  us_core:
+    thesis: US large cap quality across healthcare, staples, financials, industrials and tech
+    tickers: [LLY, JNJ, PG, KO, JPM, BRK-B, WMT, NEE, UNP, MSFT, V]
+    min: 0.35
+    max: 0.55
+  apac_core:
+    thesis: Asia Pacific large caps across Japan, Taiwan, Singapore, Hong Kong, India and Australia
+    tickers: [TM, SONY, MUFG, '8058.T', TSM, D05.SI, '1299.HK', HDB, CSL.AX, CBA.AX, '0700.HK']
+    min: 0.25
+    max: 0.45
+  commodities:
+    thesis: Producer equities only, no oil or gas; gold, diversified mining, copper, fertiliser, uranium
+    tickers: [NEM, AEM, BHP, FCX, NTR, CCJ]
+    min: 0.15
     max: 0.25
-  ai_compute:
-    thesis: Semiconductor and large cap tech exposure to the AI capex cycle
-    tickers: [SMH, XLK, QQQ]
-    min: 0.05
-    max: 0.25
-  energy_infrastructure:
-    thesis: Traditional energy and US infrastructure spend as a real economy tilt
-    tickers: [XLE, XOP, PAVE]
-    min: 0.00
-    max: 0.15
-  core_market:
-    thesis: Diversified beta anchor across US, developed and emerging markets
-    tickers: [VOO, IWM, VEA, VWO, XLV, XLF, XLI, ICLN]
-    min: 0.30
-    max: 0.70
+
+# ---------------------------------------------------------------------
+# Target weights: the owner's intended allocation per name (decimals,
+# sum to 1.0). Used as the default current weights in the basket editor
+# and as documentation. The optimiser does not read these; it only
+# enforces the basket bands and the single name cap above.
+# ---------------------------------------------------------------------
+target_weights:
+  # US core (45%)
+  LLY: 0.05
+  JNJ: 0.04
+  PG: 0.04
+  KO: 0.03
+  JPM: 0.05
+  BRK-B: 0.05
+  WMT: 0.04
+  NEE: 0.03
+  UNP: 0.03
+  MSFT: 0.05
+  V: 0.04
+  # APAC core (35%)
+  TM: 0.04
+  SONY: 0.03
+  MUFG: 0.03
+  '8058.T': 0.03
+  TSM: 0.04
+  D05.SI: 0.03
+  '1299.HK': 0.03
+  HDB: 0.03
+  CSL.AX: 0.03
+  CBA.AX: 0.03
+  '0700.HK': 0.03
+  # Commodities (20%)
+  NEM: 0.04
+  AEM: 0.03
+  BHP: 0.04
+  FCX: 0.03
+  NTR: 0.03
+  CCJ: 0.03

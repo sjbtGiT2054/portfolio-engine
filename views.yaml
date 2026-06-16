@@ -9,15 +9,15 @@
 # Two view types:
 #
 #   Absolute — "these assets will earn X% over the risk free rate":
-#     - name: utilities_rerate
-#       assets: [XLU]              # one or more tickers, equal weighted
+#     - name: pharma_rerate
+#       assets: [LLY]              # one or more tickers, equal weighted
 #       excess_return: 0.06        # 6% annual excess return
 #       confidence: 0.5            # in (0, 1]: higher = tilts the posterior more
 #
 #   Relative — "the long leg beats the short leg by X%":
-#     - name: semis_over_broad_market
-#       long: [SMH]                # equal weighted long leg
-#       short: [VOO]               # equal weighted short leg (a VIEW, not a
+#     - name: semis_over_staples
+#       long: [TSM]                # equal weighted long leg
+#       short: [PG]                # equal weighted short leg (a VIEW, not a
 #       outperformance: 0.02       #   short position; the portfolio stays long only)
 #       confidence: 0.3
 #

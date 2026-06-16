@@ -13,6 +13,10 @@ import pandas as pd
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data")
 CACHE_FILE = os.path.join(DATA_DIR, "prices.csv")
 
+# Populated by the live download: {ticker: human readable conversion note}.
+# main.py reports the non USD conversions so every one is documented.
+LAST_CONVERSION_NOTES: dict[str, str] = {}
+
 
 def fetch_prices(tickers: list[str], lookback_years: int, offline: bool = False,
                  use_cache_on_fail: bool = True) -> pd.DataFrame:
@@ -55,6 +59,10 @@ def _download_yahoo(tickers: list[str], lookback_years: int) -> pd.DataFrame:
         closes = closes.to_frame(tickers[0])
     closes = closes.dropna(how="all").ffill()
 
+    # Convert every non USD line to USD so returns and covariance live in one
+    # currency, comparable with SPY and the USD risk free rate.
+    closes = _to_usd(closes, start.strftime("%Y-%m-%d"))
+
     # Drop tickers with insufficient history (need at least ~1 year)
     min_obs = 252
     short = [c for c in closes.columns if closes[c].dropna().shape[0] < min_obs]
@@ -67,6 +75,63 @@ def _download_yahoo(tickers: list[str], lookback_years: int) -> pd.DataFrame:
     if closes.shape[1] < 2:
         raise RuntimeError("Fewer than two tickers with usable data.")
     return closes
+
+
+def _detect_currency(ticker: str) -> str:
+    """Quote currency for a Yahoo symbol, fast_info first then get_info,
+    same source the analyzer uses. Defaults to USD if undetectable."""
+    import yfinance as yf
+    tk = yf.Ticker(ticker)
+    try:
+        cur = tk.fast_info.get("currency")
+        if cur:
+            return cur
+    except Exception:
+        pass
+    try:
+        return tk.get_info().get("currency") or "USD"
+    except Exception:
+        return "USD"
+
+
+def _to_usd(closes: pd.DataFrame, start: str) -> pd.DataFrame:
+    """Convert each column to USD, reusing the analyzer currency logic.
+    Non USD lines use the matching CURUSD=X (or GBPUSD=X for pence) daily
+    close. A column whose FX cannot be fetched is dropped with a warning
+    rather than left in a foreign currency. Records every conversion in
+    LAST_CONVERSION_NOTES for the run to report.
+    """
+    import yfinance as yf
+
+    from . import analyzer
+
+    LAST_CONVERSION_NOTES.clear()
+    fx_cache: dict[str, pd.Series] = {}
+    out: dict[str, pd.Series] = {}
+    for t in closes.columns:
+        s = closes[t].dropna()
+        currency = _detect_currency(t)
+        if currency == "USD":
+            out[t] = s
+            LAST_CONVERSION_NOTES[t] = "USD, no conversion"
+            continue
+        sym = analyzer._fx_symbol(currency)
+        try:
+            if sym not in fx_cache:
+                fxh = yf.Ticker(sym).history(start=start, auto_adjust=True)["Close"]
+                if fxh.empty:
+                    raise ValueError(f"no FX history for {sym}")
+                fxh.index = fxh.index.tz_localize(None).normalize()
+                fx_cache[sym] = fxh
+            usd, note = analyzer.convert_to_usd(s, currency, fx_cache[sym])
+            out[t] = usd
+            LAST_CONVERSION_NOTES[t] = note
+        except Exception as exc:
+            warnings.warn(f"Dropping {t}: cannot convert {currency} to USD ({exc}).")
+            LAST_CONVERSION_NOTES[t] = f"DROPPED, {currency} FX unavailable"
+    if not out:
+        raise RuntimeError("No tickers left after currency conversion.")
+    return pd.DataFrame(out)
 
 
 def _synthetic_prices(tickers: list[str], lookback_years: int, seed: int = 42) -> pd.DataFrame:
